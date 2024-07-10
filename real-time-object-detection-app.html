@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Object Detection (Error Handling)</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        #videoContainer {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        #webcam, #canvas {
+            width: 100%;
+            height: auto;
+            border-radius: 5px;
+        }
+        #canvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+        #detectedObjects {
+            background-color: #f9f9f9;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        #errorMessage, #debugInfo {
+            color: red;
+            text-align: center;
+            margin-top: 20px;
+        }
+        #debugInfo {
+            color: blue;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Real-time Object Detection (Error Handling)</h1>
+        <div id="videoContainer">
+            <video id="webcam" autoplay muted></video>
+            <canvas id="canvas"></canvas>
+        </div>
+        <div id="detectedObjects">
+            <h3>Detected Objects:</h3>
+            <ul id="objectList"></ul>
+        </div>
+        <div id="errorMessage"></div>
+        <div id="debugInfo"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const objectList = document.getElementById('objectList');
+        const errorMessage = document.getElementById('errorMessage');
+        const debugInfo = document.getElementById('debugInfo');
+
+        let model;
+        let detectedObjects = new Map();
+
+        function updateDebugInfo(message) {
+            debugInfo.innerHTML += message + '<br>';
+            console.log(message);
+        }
+
+        function handleError(error, context) {
+            console.error(`Error in ${context}:`, error);
+            errorMessage.textContent = `Error in ${context}: ${error.message}`;
+            updateDebugInfo(`Error in ${context}: ${error.message}`);
+        }
+
+        // Load the COCO-SSD model
+        async function loadModel() {
+            try {
+                updateDebugInfo('Loading COCO-SSD model...');
+                model = await cocoSsd.load();
+                updateDebugInfo('Model loaded successfully.');
+                startDetection();
+            } catch (error) {
+                handleError(error, 'loading model');
+            }
+        }
+
+        // Start the webcam and object detection
+        async function startDetection() {
+            try {
+                updateDebugInfo('Requesting webcam access...');
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                updateDebugInfo('Webcam access granted.');
+                video.srcObject = stream;
+                video.addEventListener('loadeddata', () => {
+                    updateDebugInfo('Video data loaded. Starting detection...');
+                    detectObjects();
+                });
+            } catch (error) {
+                handleError(error, 'accessing webcam');
+            }
+        }
+
+        // Perform object detection
+        async function detectObjects() {
+            try {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                updateDebugInfo('Performing object detection...');
+                const predictions = await model.detect(video);
+                updateDebugInfo(`Detection complete. Found ${predictions.length} objects.`);
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.font = '16px sans-serif';
+                ctx.textBaseline = 'top';
+
+                predictions.forEach(prediction => {
+                    const [x, y, width, height] = prediction.bbox;
+                    const label = `${prediction.class} (${Math.round(prediction.score * 100)}%)`;
+
+                    ctx.strokeStyle = '#00FFFF';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, width, height);
+
+                    ctx.fillStyle = '#00FFFF';
+                    ctx.fillRect(x, y, ctx.measureText(label).width + 10, 25);
+
+                    ctx.fillStyle = '#000000';
+                    ctx.fillText(label, x, y);
+
+                    if (!detectedObjects.has(prediction.class)) {
+                        const timestamp = new Date().toLocaleTimeString();
+                        detectedObjects.set(prediction.class, timestamp);
+                        updateObjectList();
+                    }
+                });
+
+                // Schedule the next detection
+                setTimeout(detectObjects, 500); // 2 FPS
+            } catch (error) {
+                handleError(error, 'object detection');
+            }
+        }
+
+        // Update the list of detected objects
+        function updateObjectList() {
+            objectList.innerHTML = '';
+            detectedObjects.forEach((timestamp, objectClass) => {
+                const li = document.createElement('li');
+                li.textContent = `${objectClass} (First detected at ${timestamp})`;
+                objectList.appendChild(li);
+            });
+        }
+
+        // Start the application
+        updateDebugInfo('Starting application...');
+        window.onload = () => {
+            updateDebugInfo('Window loaded. Checking for TensorFlow...');
+            if (typeof tf !== 'undefined') {
+                updateDebugInfo('TensorFlow.js loaded successfully.');
+                if (typeof cocoSsd !== 'undefined') {
+                    updateDebugInfo('COCO-SSD model available. Starting model loading...');
+                    loadModel();
+                } else {
+                    handleError(new Error('COCO-SSD model not found'), 'initialization');
+                }
+            } else {
+                handleError(new Error('TensorFlow.js not found'), 'initialization');
+            }
+        };
+    </script>
+</body>
+</html>
